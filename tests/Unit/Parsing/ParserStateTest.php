@@ -7,6 +7,8 @@ namespace Sabberworm\CSS\Tests\Unit\Parsing;
 use PHPUnit\Framework\TestCase;
 use Sabberworm\CSS\Comment\Comment;
 use Sabberworm\CSS\Parsing\ParserState;
+use Sabberworm\CSS\Parsing\UnexpectedEOFException;
+use Sabberworm\CSS\Parsing\UnexpectedTokenException;
 use Sabberworm\CSS\Settings;
 use TRegx\PhpUnit\DataProviders\DataProvider;
 
@@ -420,5 +422,276 @@ final class ParserStateTest extends TestCase
         $this->expectExceptionCode(1787112622);
 
         $subject->consumeExpression('/^[0-9a-fA-F]{1,6}/u', 6);
+    }
+
+    /**
+     * @test
+     */
+    public function getSettingsReturnsSettingsProvidedToConstructor(): void
+    {
+        $settings = Settings::create();
+        $subject = new ParserState('a', $settings);
+
+        self::assertSame($settings, $subject->getSettings());
+    }
+
+    /**
+     * @test
+     */
+    public function setPositionMovesCurrentPosition(): void
+    {
+        $subject = new ParserState('abc', Settings::create());
+        $subject->consume(2);
+
+        $subject->setPosition(0);
+
+        self::assertSame(0, $subject->currentColumn());
+        self::assertSame('a', $subject->peek());
+    }
+
+    /**
+     * @test
+     */
+    public function backtrackMovesPositionBack(): void
+    {
+        $subject = new ParserState('abc', Settings::create());
+        $subject->consume(2);
+
+        $subject->backtrack(1);
+
+        self::assertSame('b', $subject->peek());
+    }
+
+    /**
+     * @test
+     */
+    public function anchorBacktracksToPositionAtWhichItWasCreated(): void
+    {
+        $subject = new ParserState('abc', Settings::create());
+        $subject->consume(1);
+        $anchor = $subject->anchor();
+        $subject->consume(1);
+
+        $anchor->backtrack();
+
+        self::assertSame('b', $subject->peek());
+    }
+
+    /**
+     * @test
+     */
+    public function parseIdentifierThrowsAtEndOfInput(): void
+    {
+        $subject = new ParserState('', Settings::create());
+
+        $this->expectException(UnexpectedEOFException::class);
+
+        $subject->parseIdentifier();
+    }
+
+    /**
+     * @test
+     */
+    public function parseIdentifierThrowsForCharacterThatCannotStartIdentifier(): void
+    {
+        $subject = new ParserState('{', Settings::create());
+
+        $this->expectException(UnexpectedTokenException::class);
+
+        $subject->parseIdentifier();
+    }
+
+    /**
+     * @test
+     */
+    public function parseIdentifierWithoutIgnoringCaseKeepsCase(): void
+    {
+        $subject = new ParserState('Ab', Settings::create());
+
+        self::assertSame('Ab', $subject->parseIdentifier(false));
+    }
+
+    /**
+     * @test
+     */
+    public function parseIdentifierKeepsEscapedCharacterThatIsNotValidInIdentifierEscaped(): void
+    {
+        $subject = new ParserState('a\\.b', Settings::create());
+
+        self::assertSame('a\\.b', $subject->parseIdentifier());
+    }
+
+    /**
+     * @test
+     */
+    public function parseCharacterForEscapedNonHexCharacterReturnsThatCharacter(): void
+    {
+        $subject = new ParserState('\\.', Settings::create());
+
+        self::assertSame('.', $subject->parseCharacter(false));
+    }
+
+    /**
+     * @test
+     */
+    public function parseCharacterForIncompleteUnicodeEscapeConsumesFollowingWhitespace(): void
+    {
+        $subject = new ParserState('\\41 x', Settings::create());
+
+        self::assertSame('A', $subject->parseCharacter(false));
+        self::assertSame('x', $subject->peek());
+    }
+
+    /**
+     * @test
+     */
+    public function parseCharacterForIdentifierReturnsNullForCharacterNotValidInIdentifier(): void
+    {
+        $subject = new ParserState('{', Settings::create());
+
+        self::assertNull($subject->parseCharacter(true));
+    }
+
+    /**
+     * @test
+     */
+    public function parseCharacterNotForIdentifierReturnsAnyCharacter(): void
+    {
+        $subject = new ParserState('{', Settings::create());
+
+        self::assertSame('{', $subject->parseCharacter(false));
+    }
+
+    /**
+     * @test
+     */
+    public function consumeWhiteSpaceInLenientModeConsumesUnclosedCommentUntilEndOfInput(): void
+    {
+        $subject = new ParserState('/* x', Settings::create());
+
+        $subject->consumeWhiteSpace();
+
+        self::assertTrue($subject->isEnd());
+    }
+
+    /**
+     * @test
+     */
+    public function consumeWhiteSpaceInStrictModeThrowsForUnclosedComment(): void
+    {
+        $subject = new ParserState('/* x', Settings::create()->beStrict());
+
+        $this->expectException(UnexpectedEOFException::class);
+
+        $subject->consumeWhiteSpace();
+    }
+
+    /**
+     * @test
+     */
+    public function consumeThrowsForStringThatDoesNotCome(): void
+    {
+        $subject = new ParserState('ab', Settings::create());
+
+        $this->expectException(UnexpectedTokenException::class);
+
+        $subject->consume('x');
+    }
+
+    /**
+     * @test
+     */
+    public function consumeThrowsForMoreCharactersThanAreLeft(): void
+    {
+        $subject = new ParserState('ab', Settings::create());
+
+        $this->expectException(UnexpectedEOFException::class);
+
+        $subject->consume(3);
+    }
+
+    /**
+     * @test
+     */
+    public function consumeExpressionConsumesMatch(): void
+    {
+        $subject = new ParserState('ab', Settings::create());
+
+        self::assertSame('a', $subject->consumeExpression('/^a/'));
+        self::assertSame('b', $subject->peek());
+    }
+
+    /**
+     * @test
+     */
+    public function consumeExpressionThrowsIfExpressionDoesNotMatch(): void
+    {
+        $subject = new ParserState('ab', Settings::create());
+
+        $this->expectException(UnexpectedTokenException::class);
+
+        $subject->consumeExpression('/^x/');
+    }
+
+    /**
+     * @test
+     */
+    public function consumeUntilWithIncludeEndReturnsStopCharacter(): void
+    {
+        $subject = new ParserState('ab;c', Settings::create());
+
+        self::assertSame('ab;', $subject->consumeUntil(';', true));
+        self::assertSame('c', $subject->peek());
+    }
+
+    /**
+     * @test
+     */
+    public function consumeUntilWithConsumeEndConsumesButDoesNotReturnStopCharacter(): void
+    {
+        $subject = new ParserState('ab;c', Settings::create());
+
+        self::assertSame('ab', $subject->consumeUntil(';', false, true));
+        self::assertSame('c', $subject->peek());
+    }
+
+    /**
+     * @test
+     */
+    public function consumeUntilWithEofAsStopCharacterConsumesRestOfInput(): void
+    {
+        $subject = new ParserState('abc', Settings::create());
+
+        self::assertSame('abc', $subject->consumeUntil([';', ParserState::EOF]));
+        self::assertTrue($subject->isEnd());
+    }
+
+    /**
+     * @test
+     */
+    public function consumeUntilThrowsAndResetsPositionIfStopCharacterIsNotFound(): void
+    {
+        $subject = new ParserState('abc', Settings::create());
+
+        try {
+            $subject->consumeUntil(';');
+            self::fail('Expected exception was not thrown.');
+        } catch (UnexpectedEOFException $exception) {
+            self::assertSame(0, $subject->currentColumn());
+        }
+    }
+
+    /**
+     * @test
+     */
+    public function peekWithMultibyteSupportSplitsNonUtf8TextIntoCharacters(): void
+    {
+        $subject = new ParserState(
+            "\xE4b",
+            Settings::create()->withMultibyteSupport(true)->withDefaultCharset('ISO-8859-1')
+        );
+
+        self::assertSame("\xE4", $subject->peek());
+        self::assertSame('b', $subject->peek(1, 1));
     }
 }
