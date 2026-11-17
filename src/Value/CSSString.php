@@ -68,6 +68,14 @@ class CSSString extends PrimitiveValue
             }
         } else {
             while (!$parserState->comes($quote)) {
+                if ($parserState->comes("\n") || $parserState->comes("\r") || $parserState->comes("\f")) {
+                    throw new UnexpectedTokenException(
+                        'Unterminated string,',
+                        'found a newline',
+                        'custom',
+                        $parserState->currentLine()
+                    );
+                }
                 $content = $parserState->parseCharacter(false);
                 if ($content === null) {
                     throw new SourceException(

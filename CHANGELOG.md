@@ -29,6 +29,8 @@ Please also have a look at our
 
 ### Fixed
 
+- Stop an unterminated quoted string at the line break so that it no longer
+  discards the following rules
 - Allow generic parsing of CSS units that might be added to the spec in future
   (#1689)
 - Allow empty default value in var() e.g. `.a { border: var(--w,) solid red; }` (#1659)
