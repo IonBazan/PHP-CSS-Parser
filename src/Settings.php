@@ -35,6 +35,13 @@ class Settings
      */
     private $lenientParsing = true;
 
+    /**
+     * The maximum depth to which blocks (e.g. `@media`) may be nested.
+     *
+     * @var int<1, max>
+     */
+    private $maximumNestingDepth = 100;
+
     private function __construct()
     {
         $this->multibyteSupport = \extension_loaded('mbstring');
@@ -87,6 +94,22 @@ class Settings
     }
 
     /**
+     * Sets the maximum depth to which blocks (e.g. `@media`) may be nested.
+     *
+     * Blocks nested deeper are skipped in lenient mode and cause a `SourceException` in strict mode.
+     *
+     * @param int<1, max> $maximumNestingDepth
+     *
+     * @return $this fluent interface
+     */
+    public function withMaximumNestingDepth(int $maximumNestingDepth): self
+    {
+        $this->maximumNestingDepth = $maximumNestingDepth;
+
+        return $this;
+    }
+
+    /**
      * Configures the parser to choke on invalid rules.
      *
      * @return $this fluent interface
@@ -120,5 +143,15 @@ class Settings
     public function usesLenientParsing(): bool
     {
         return $this->lenientParsing;
+    }
+
+    /**
+     * @return int<1, max>
+     *
+     * @internal
+     */
+    public function getMaximumNestingDepth(): int
+    {
+        return $this->maximumNestingDepth;
     }
 }

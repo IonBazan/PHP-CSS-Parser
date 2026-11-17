@@ -47,6 +47,11 @@ class ParserState
     private $lineNumber;
 
     /**
+     * @var int<0, max>
+     */
+    private $nestingDepth = 0;
+
+    /**
      * @param string $text the complete CSS as text (i.e., usually the contents of a CSS file)
      * @param int<1, max> $lineNumber
      */
@@ -86,6 +91,24 @@ class ParserState
     public function getSettings(): Settings
     {
         return $this->parserSettings;
+    }
+
+    /**
+     * @return int<0, max>
+     */
+    public function getNestingDepth(): int
+    {
+        return $this->nestingDepth;
+    }
+
+    public function increaseNestingDepth(): void
+    {
+        $this->nestingDepth++;
+    }
+
+    public function decreaseNestingDepth(): void
+    {
+        $this->nestingDepth = \max(0, $this->nestingDepth - 1);
     }
 
     public function anchor(): Anchor

@@ -8,9 +8,12 @@ use PHPUnit\Framework\TestCase;
 use Sabberworm\CSS\Comment\Commentable;
 use Sabberworm\CSS\CSSElement;
 use Sabberworm\CSS\CSSList\CSSListItem;
+use Sabberworm\CSS\Parser;
+use Sabberworm\CSS\Parsing\SourceException;
 use Sabberworm\CSS\Property\Selector;
 use Sabberworm\CSS\Renderable;
 use Sabberworm\CSS\RuleSet\DeclarationBlock;
+use Sabberworm\CSS\Settings;
 use Sabberworm\CSS\Tests\Unit\CSSList\Fixtures\ConcreteCSSList;
 
 /**
@@ -353,5 +356,76 @@ final class CSSListTest extends TestCase
         $subject = new ConcreteCSSList();
 
         $subject->getArrayRepresentation();
+    }
+
+    /**
+     * @test
+     */
+    public function parsesManyStrayClosingBracesInLenientMode(): void
+    {
+        $css = \str_repeat('}', 200000) . 'a{b:c}';
+
+        $result = (new Parser($css))->parse()->render();
+
+        self::assertSame('a {b: c;}', $result);
+    }
+
+    /**
+     * @test
+     */
+    public function throwsOnStrayClosingBraceInStrictMode(): void
+    {
+        $this->expectException(SourceException::class);
+        $this->expectExceptionMessage('Unopened {');
+
+        (new Parser('}a{b:c}', Settings::create()->beStrict()))->parse();
+    }
+
+    /**
+     * @test
+     */
+    public function parsesNestingUpToTheMaximumDepth(): void
+    {
+        $css = '@supports (a:b){@media screen{@keyframes x{from{a:b}}}}';
+
+        $result = (new Parser($css, Settings::create()->beStrict()->withMaximumNestingDepth(3)))->parse()->render();
+
+        self::assertSame('@supports (a:b) {@media screen {@keyframes x {from {a: b;}}}}', $result);
+    }
+
+    /**
+     * @test
+     */
+    public function skipsBlocksNestedBeyondTheMaximumDepthInLenientMode(): void
+    {
+        $css = '@media a{@media b{x{y:"}"} /* } */ z{y:z}} p{q:r}} s{t:u}';
+
+        $result = (new Parser($css, Settings::create()->withMaximumNestingDepth(1)))->parse()->render();
+
+        self::assertSame('@media a {p {q: r;}}' . "\n" . 's {t: u;}', $result);
+    }
+
+    /**
+     * @test
+     */
+    public function boundsVeryDeepNestingInLenientMode(): void
+    {
+        $css = \str_repeat('@media screen{', 50000) . 'a{b:c}' . \str_repeat('}', 50000);
+
+        $result = (new Parser($css))->parse()->render();
+
+        self::assertSame(100, \substr_count($result, '@media'));
+    }
+
+    /**
+     * @test
+     */
+    public function throwsOnNestingBeyondTheMaximumDepthInStrictMode(): void
+    {
+        $this->expectException(SourceException::class);
+        $this->expectExceptionMessage('Maximum nesting depth exceeded');
+
+        (new Parser('@media a{@media b{x{y:z}}}', Settings::create()->beStrict()->withMaximumNestingDepth(1)))
+            ->parse();
     }
 }

@@ -13,6 +13,7 @@ Please also have a look at our
 - Recognize newer CSS units (container query, viewport, font-relative and
   resolution units) in `Size` (#1641)
 - Add support for `from` keyword in `parseColorFunction` (#1639)
+- Add `Settings::withMaximumNestingDepth()` (default 100) to limit block nesting
 
 ### Changed
 
@@ -29,6 +30,8 @@ Please also have a look at our
 
 ### Fixed
 
+- Avoid exhausting memory or the stack on many stray `}` or deeply nested
+  blocks by parsing stray braces iteratively and limiting nesting depth
 - Allow generic parsing of CSS units that might be added to the spec in future
   (#1689)
 - Allow empty default value in var() e.g. `.a { border: var(--w,) solid red; }` (#1659)

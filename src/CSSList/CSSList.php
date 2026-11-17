@@ -114,6 +114,11 @@ abstract class CSSList implements CSSElement, CSSListItem, Positionable
     private static function parseListItem(ParserState $parserState, CSSList $list)
     {
         $isRoot = $list instanceof Document;
+        if ($isRoot && $parserState->getSettings()->usesLenientParsing()) {
+            while ($parserState->comes('}')) {
+                $parserState->consume(1);
+            }
+        }
         if ($parserState->comes('@')) {
             $atRule = self::parseAtRule($parserState);
             if ($atRule instanceof Charset) {
@@ -138,18 +143,82 @@ abstract class CSSList implements CSSElement, CSSListItem, Positionable
             return $atRule;
         } elseif ($parserState->comes('}')) {
             if ($isRoot) {
-                if ($parserState->getSettings()->usesLenientParsing()) {
-                    $parserState->consume(1);
-                    return self::parseListItem($parserState, $list);
-                } else {
-                    throw new SourceException('Unopened {', $parserState->currentLine());
-                }
+                throw new SourceException('Unopened {', $parserState->currentLine());
             } else {
                 // End of list
                 return null;
             }
         } else {
             return DeclarationBlock::parse($parserState, $list) ?? false;
+        }
+    }
+
+    /**
+     * Parses the contents of a block (after its opening brace) as a nested list, enforcing the nesting depth limit.
+     *
+     * In lenient mode, a block exceeding the limit is skipped entirely and reported as an unexpected token,
+     * which makes the calling list parser drop the item.
+     *
+     * @throws SourceException
+     * @throws UnexpectedTokenException
+     * @throws UnexpectedEOFException
+     */
+    private static function parseNestedList(ParserState $parserState, CSSList $list): void
+    {
+        if ($parserState->getNestingDepth() >= $parserState->getSettings()->getMaximumNestingDepth()) {
+            if (!$parserState->getSettings()->usesLenientParsing()) {
+                throw new SourceException('Maximum nesting depth exceeded', $parserState->currentLine());
+            }
+            self::skipBlock($parserState);
+            throw new UnexpectedTokenException(
+                'Maximum nesting depth exceeded',
+                '',
+                'custom',
+                $parserState->currentLine()
+            );
+        }
+
+        $parserState->increaseNestingDepth();
+        try {
+            self::parseList($parserState, $list);
+        } finally {
+            $parserState->decreaseNestingDepth();
+        }
+    }
+
+    /**
+     * Consumes everything up to and including the closing brace of the block whose opening brace was just consumed.
+     *
+     * @throws UnexpectedEOFException
+     * @throws UnexpectedTokenException
+     */
+    private static function skipBlock(ParserState $parserState): void
+    {
+        $depth = 1;
+        while ($depth > 0) {
+            $parserState->consumeUntil(['{', '}', '"', "'", ParserState::EOF]);
+            if ($parserState->isEnd()) {
+                return;
+            }
+            $character = $parserState->consume(1);
+            if ($character === '{') {
+                $depth++;
+            } elseif ($character === '}') {
+                $depth--;
+            } else {
+                try {
+                    while (true) {
+                        $stringCharacter = $parserState->consume(1);
+                        if ($stringCharacter === '\\') {
+                            $parserState->consume(1);
+                        } elseif ($stringCharacter === $character || $stringCharacter === "\n") {
+                            break;
+                        }
+                    }
+                } catch (UnexpectedEOFException $e) {
+                    return;
+                }
+            }
         }
     }
 
@@ -185,7 +254,7 @@ abstract class CSSList implements CSSElement, CSSListItem, Positionable
             $result = new KeyFrame($identifierLineNumber);
             $result->setVendorKeyFrame($identifier);
             $result->setAnimationName(\trim($parserState->consumeUntil('{', false, true)));
-            CSSList::parseList($parserState, $result);
+            self::parseNestedList($parserState, $result);
             if ($parserState->comes('}')) {
                 $parserState->consume('}');
             }
@@ -237,7 +306,7 @@ abstract class CSSList implements CSSElement, CSSListItem, Positionable
                 RuleSet::parseRuleSet($parserState, $atRule);
             } else {
                 $atRule = new AtRuleBlockList($identifier, $arguments, $identifierLineNumber);
-                CSSList::parseList($parserState, $atRule);
+                self::parseNestedList($parserState, $atRule);
                 if ($parserState->comes('}')) {
                     $parserState->consume('}');
                 }
