@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Sabberworm\CSS\Tests\Unit\Value;
 
 use PHPUnit\Framework\TestCase;
+use Sabberworm\CSS\Parser;
+use Sabberworm\CSS\Parsing\UnexpectedTokenException;
+use Sabberworm\CSS\Settings;
 use Sabberworm\CSS\Value\PrimitiveValue;
 use Sabberworm\CSS\Value\Size;
 use Sabberworm\CSS\Value\Value;
@@ -195,5 +198,55 @@ final class SizeTest extends TestCase
             'absolute unit' => [1.0, 'px'],
             'zero without unit' => [0.0, null],
         ];
+    }
+
+    /**
+     * @test
+     */
+    public function dropsDeclarationWithUnitWithoutNumberInLenientMode(): void
+    {
+        $document = (new Parser('p { width: px; height: 1px; }'))->parse();
+
+        self::assertSame('p {height: 1px;}', $document->render());
+    }
+
+    /**
+     * @test
+     */
+    public function dropsDeclarationWithUppercaseUnitWithoutNumberInLenientMode(): void
+    {
+        $document = (new Parser('p { width: PX; height: 1px; }'))->parse();
+
+        self::assertSame('p {height: 1px;}', $document->render());
+    }
+
+    /**
+     * @test
+     */
+    public function dropsDeclarationWithUnitWithoutNumberInValueList(): void
+    {
+        $document = (new Parser('p { margin: 0 px; height: 1px; }'))->parse();
+
+        self::assertSame('p {height: 1px;}', $document->render());
+    }
+
+    /**
+     * @test
+     */
+    public function throwsExceptionForUnitWithoutNumberInStrictMode(): void
+    {
+        $this->expectException(UnexpectedTokenException::class);
+
+        (new Parser('p { width: px; }', Settings::create()->beStrict()))->parse();
+    }
+
+    /**
+     * @test
+     */
+    public function keepsSingleLetterIdentifierThatIsAlsoAUnit(): void
+    {
+        $document = (new Parser('p { animation-name: x; }'))->parse();
+
+        self::assertSame('p {animation-name: x;}', $document->render());
     }
 }

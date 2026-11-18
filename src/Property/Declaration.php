@@ -16,7 +16,9 @@ use Sabberworm\CSS\Position\Position;
 use Sabberworm\CSS\Position\Positionable;
 use Sabberworm\CSS\ShortClassNameProvider;
 use Sabberworm\CSS\Value\RuleValueList;
+use Sabberworm\CSS\Value\Size;
 use Sabberworm\CSS\Value\Value;
+use Sabberworm\CSS\Value\ValueList;
 
 /**
  * `Declaration`s just have a string key (the property name) and a 'Value'.
@@ -78,6 +80,9 @@ class Declaration implements Commentable, CSSElement, Positionable
         $declaration->setComments($comments);
         $parserState->consume(':');
         $value = Value::parseValue($parserState, self::getDelimitersForPropertyValue($declaration->getPropertyName()));
+        if (self::containsNumberlessUnit($value)) {
+            throw new UnexpectedTokenException('number', 'unit without number', 'literal', $parserState->currentLine());
+        }
         $declaration->setValue($value);
         $parserState->consumeWhiteSpace();
         if ($parserState->comes('!')) {
@@ -92,6 +97,25 @@ class Declaration implements Commentable, CSSElement, Positionable
         }
 
         return $declaration;
+    }
+
+    /**
+     * @param Value|string $value
+     */
+    private static function containsNumberlessUnit($value): bool
+    {
+        if (\is_string($value)) {
+            return Size::isNumberlessUnit($value);
+        }
+        if ($value instanceof ValueList) {
+            foreach ($value->getListComponents() as $component) {
+                if (self::containsNumberlessUnit($component)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /**

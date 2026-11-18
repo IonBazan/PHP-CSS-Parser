@@ -188,6 +188,17 @@ class Size extends PrimitiveValue
     }
 
     /**
+     * Whether the identifier is a multi-letter unit that is invalid without a preceding number.
+     * Single-letter units (`s`, `x`, `Q`) are excluded because they are also valid custom identifiers.
+     *
+     * @internal
+     */
+    public static function isNumberlessUnit(string $identifier): bool
+    {
+        return \strlen($identifier) > 1 && isset(self::getSizeUnits()[\strtolower($identifier)]);
+    }
+
+    /**
      * @param non-empty-string $unit
      *
      * @return non-empty-string
